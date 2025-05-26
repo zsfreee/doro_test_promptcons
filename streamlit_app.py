@@ -136,13 +136,17 @@ import hmac
 def init_openai_client():
     """Инициализация OpenAI клиента с использованием Streamlit secrets"""
     try:
-        # Получаем API ключ из secrets
-        api_key = st.secrets.openai.api_key
+        # Получаем API ключ из secrets (поддерживаем оба формата)
+        try:
+            api_key = st.secrets.openai.api_key
+        except AttributeError:
+            api_key = st.secrets["OPENAI_API_KEY"]
+        
         client = OpenAI(api_key=api_key)
         return client
     except Exception as e:
         st.error(f"Ошибка инициализации OpenAI: {e}")
-        st.error("Убедитесь, что openai.api_key добавлен в Streamlit secrets")
+        st.error("Убедитесь, что OPENAI_API_KEY добавлен в Streamlit secrets")
         return None
 
 def check_password():
@@ -152,13 +156,23 @@ def check_password():
     
     def password_entered():
         """Checks whether a password entered by the user is correct."""
-        if hmac.compare_digest(
-            st.session_state.password,
-            st.secrets.auth.password
-        ):
-            st.session_state.password_correct = True
-            del st.session_state.password  # Не храним пароль в сессии
-        else:
+        try:
+            # Поддерживаем оба формата secrets
+            try:
+                password = st.secrets.auth.password
+            except AttributeError:
+                password = st.secrets["PASSWORD"]
+            
+            if hmac.compare_digest(
+                st.session_state.password,
+                password
+            ):
+                st.session_state.password_correct = True
+                del st.session_state.password  # Не храним пароль в сессии
+            else:
+                st.session_state.password_correct = False
+        except Exception as e:
+            st.error(f"Ошибка проверки пароля: {e}")
             st.session_state.password_correct = False
     
     # Оформление страницы входа
