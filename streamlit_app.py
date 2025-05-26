@@ -130,19 +130,20 @@ SYSTEM_PROMPT = '''Ты гениальный AI продажник
 Начинай с приветствия и первого вопроса из плана консультации
 Заканчивай разговор после получения контактов и со словом 'Спасибо'.'''
 
+@st.cache_resource
 def init_openai_client():
-    """Инициализация OpenAI клиента"""
-    if 'openai_client' not in st.session_state:
-        if st.session_state.get('api_key'):
-            try:
-                st.session_state.openai_client = OpenAI(api_key=st.session_state.api_key)
-                return True
-            except Exception as e:
-                st.error(f"Ошибка инициализации OpenAI: {e}")
-                return False
-    return True
+    """Инициализация OpenAI клиента с использованием Streamlit secrets"""
+    try:
+        # Получаем API ключ из secrets
+        api_key = st.secrets["OPENAI_API_KEY"]
+        client = OpenAI(api_key=api_key)
+        return client
+    except Exception as e:
+        st.error(f"Ошибка инициализации OpenAI: {e}")
+        st.error("Убедитесь, что OPENAI_API_KEY добавлен в Streamlit secrets")
+        return None
 
-def chat_with_memory(history, system_prompt, user_message):
+def chat_with_memory(client, history, system_prompt, user_message):
     """Функция общения с AI с сохранением памяти"""
     try:
         # Формируем полную историю
@@ -158,7 +159,7 @@ def chat_with_memory(history, system_prompt, user_message):
             messages.append({"role": "user", "content": user_message})
         
         # Запрос к OpenAI
-        response = st.session_state.openai_client.chat.completions.create(
+        response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=messages,
             temperature=0.15,
@@ -170,10 +171,10 @@ def chat_with_memory(history, system_prompt, user_message):
     except Exception as e:
         return f"Произошла ошибка при обращении к AI: {e}"
 
-def split_response_with_gpt(response):
+def split_response_with_gpt(client, response):
     """Разделение ответа на видимую и скрытую части"""
     try:
-        response_obj = st.session_state.openai_client.chat.completions.create(
+        response_obj = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": """Ты помощник, который разделяет текст на две части: первую (видимую) часть для пользователя и вторую (скрытую) часть для внутренней обработки.
@@ -211,44 +212,55 @@ def main():
     st.title("🐻 DoroMarine AI Консультант")
     st.markdown("*Забота о здоровье вашего ребенка - наш приоритет*")
     
-    # Боковая панель для настроек
+    # Инициализация OpenAI клиента
+    client = init_openai_client()
+    
+    if not client:
+        st.stop()
+    
+    # Боковая панель с информацией
     with st.sidebar:
-        st.header("⚙️ Настройки")
+        st.header("ℹ️ О консультации")
         
-        # Ввод API ключа
-        api_key = st.text_input(
-            "OpenAI API Key:", 
-            type="password",
-            value=st.session_state.get('api_key', ''),
-            help="Введите ваш OpenAI API ключ"
-        )
+        st.markdown("""
+        **DoroMarine** - натуральные витамины для детского здоровья
         
-        if api_key:
-            st.session_state.api_key = api_key
-            if init_openai_client():
-                st.success("✅ API ключ подключен")
-            else:
-                st.error("❌ Ошибка подключения API")
+        🎯 **Что мы обсуждаем:**
+        • Проблемы с иммунитетом
+        • Вопросы пищеварения
+        • Профилактика паразитов
+        • Общее здоровье ребенка
+        
+        🔒 **Конфиденциально и безопасно**
+        """)
         
         st.markdown("---")
         
+        # Статистика сессии
+        if 'messages' in st.session_state:
+            st.metric("Сообщений в диалоге", len(st.session_state.messages))
+        
         # Кнопка очистки чата
-        if st.button("🗑️ Очистить чат", use_container_width=True):
+        if st.button("🗑️ Начать заново", use_container_width=True):
             st.session_state.messages = []
             st.session_state.chat_history = []
+            st.session_state.conversation_started = False
             st.rerun()
         
         # Информация о продукте
-        with st.expander("ℹ️ О DoroMarine"):
+        with st.expander("📋 О DoroMarine"):
             st.markdown("""
-            **DoroMarine** - натуральные мармеладные витамины для детей от 2 до 14 лет.
+            **Состав:** Пектин, сок папайи, сок горького арбуза, фейхоа, яблочный порошок
             
-            🌿 **100% натуральный состав**
-            🐻 **Вкусные мармеладные мишки**
-            🛡️ **Комплексная защита здоровья**
-            ✅ **Сертификат Халяль ДУМК**
+            **Форма:** Мармеладные мишки
             
-            *Стоимость: 9700 тенге за курс*
+            **Возраст:** 2-14 лет
+            
+            **Курс:** 60 штук на месяц
+            
+            **Цена:** 9700 тенге
+            
+            ✅ Сертификат Халяль ДУМК
             """)
     
     # Инициализация сессии
@@ -261,35 +273,43 @@ def main():
     if 'conversation_started' not in st.session_state:
         st.session_state.conversation_started = False
     
-    # Проверка наличия API ключа
-    if not st.session_state.get('api_key'):
-        st.warning("⚠️ Пожалуйста, введите OpenAI API ключ в боковой панели для начала консультации")
-        return
-    
     # Автоматический запуск консультации
-    if not st.session_state.conversation_started and st.session_state.get('openai_client'):
-        with st.spinner("Подключаем консультанта..."):
-            initial_response = chat_with_memory(st.session_state.chat_history, SYSTEM_PROMPT, "")
+    if not st.session_state.conversation_started:
+        with st.spinner("🤖 Подключаем AI-консультанта..."):
+            time.sleep(1)  # Небольшая задержка для реалистичности
+            initial_response = chat_with_memory(client, st.session_state.chat_history, SYSTEM_PROMPT, "")
             
-            if initial_response:
-                visible_part, hidden_part = split_response_with_gpt(initial_response)
+            if initial_response and "Произошла ошибка" not in initial_response:
+                visible_part, hidden_part = split_response_with_gpt(client, initial_response)
                 
                 # Добавляем в историю
-                st.session_state.messages.append({"role": "assistant", "content": visible_part})
+                st.session_state.messages.append({
+                    "role": "assistant", 
+                    "content": visible_part,
+                    "timestamp": time.time()
+                })
                 st.session_state.chat_history.append({"role": "assistant", "content": initial_response})
                 
                 st.session_state.conversation_started = True
-        st.rerun()
+                st.rerun()
+            else:
+                st.error("❌ Не удалось подключить консультанта. Попробуйте обновить страницу.")
     
     # Отображение истории чата
     chat_container = st.container()
     with chat_container:
-        for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
-                if message["role"] == "assistant":
-                    st.markdown(f"🤖 **Консультант DoroMarine:**\n\n{message['content']}")
-                else:
-                    st.markdown(f"👤 **Вы:**\n\n{message['content']}")
+        if st.session_state.messages:
+            for i, message in enumerate(st.session_state.messages):
+                with st.chat_message(message["role"]):
+                    if message["role"] == "assistant":
+                        st.markdown(f"🤖 **Консультант DoroMarine:**")
+                        st.markdown(message['content'])
+                    else:
+                        st.markdown(f"👤 **Вы:**")
+                        st.markdown(message['content'])
+        else:
+            # Показываем приветственное сообщение пока AI не подключился
+            st.info("🔄 Инициализация консультации...")
     
     # Поле ввода сообщения
     if st.session_state.conversation_started:
@@ -297,29 +317,60 @@ def main():
         
         if user_input:
             # Добавляем сообщение пользователя
-            st.session_state.messages.append({"role": "user", "content": user_input})
+            st.session_state.messages.append({
+                "role": "user", 
+                "content": user_input,
+                "timestamp": time.time()
+            })
             st.session_state.chat_history.append({"role": "user", "content": user_input})
             
             # Генерируем ответ AI
-            with st.spinner("Консультант думает..."):
-                ai_response = chat_with_memory(st.session_state.chat_history, SYSTEM_PROMPT, user_input)
+            with st.spinner("🤔 Консультант анализирует..."):
+                ai_response = chat_with_memory(client, st.session_state.chat_history, SYSTEM_PROMPT, user_input)
                 
-                if ai_response:
+                if ai_response and "Произошла ошибка" not in ai_response:
                     # Разделяем ответ
-                    visible_part, hidden_part = split_response_with_gpt(ai_response)
+                    visible_part, hidden_part = split_response_with_gpt(client, ai_response)
                     
                     # Добавляем видимую часть в интерфейс
-                    st.session_state.messages.append({"role": "assistant", "content": visible_part})
+                    st.session_state.messages.append({
+                        "role": "assistant", 
+                        "content": visible_part,
+                        "timestamp": time.time()
+                    })
                     
                     # Сохраняем полный ответ в историю для AI
                     st.session_state.chat_history.append({"role": "assistant", "content": ai_response})
                     
                     # Проверяем на завершение разговора
-                    if "Спасибо" in ai_response and ("контакт" in user_input.lower() or "телефон" in user_input.lower() or "@" in user_input):
+                    if "Спасибо" in ai_response and any(keyword in user_input.lower() for keyword in ["контакт", "телефон", "email", "@", "+7", "+8"]):
                         st.balloons()
-                        st.success("🎉 Спасибо за консультацию! С вами свяжется наш специалист в ближайшее время.")
+                        st.success("🎉 Консультация завершена! Наш специалист свяжется с вами в ближайшее время.")
+                        
+                        # Показываем финальную информацию
+                        with st.expander("📞 Что дальше?", expanded=True):
+                            st.markdown("""
+                            ✅ **Ваши контакты получены**
+                            
+                            📞 Наш специалист свяжется с вами в течение 24 часов
+                            
+                            🕐 Время работы: ПН-ПТ с 9:00 до 18:00
+                            
+                            📧 По вопросам: info@doromarine.kz
+                            """)
+                else:
+                    st.error("❌ Произошла ошибка при получении ответа. Попробуйте еще раз.")
             
             st.rerun()
+    
+    # Футер
+    st.markdown("---")
+    st.markdown(
+        "<div style='text-align: center; color: #666; font-size: 12px;'>"
+        "DoroMarine © 2024 | Натуральные витамины для детей"
+        "</div>", 
+        unsafe_allow_html=True
+    )
 
 if __name__ == "__main__":
     main()
