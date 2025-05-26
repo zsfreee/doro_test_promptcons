@@ -435,7 +435,7 @@ def main():
     st.markdown("---")
     st.markdown(
         "<div style='text-align: center; color: #666; font-size: 12px;'>"
-        "DoroMarine © 2025 | Натуральные витамины для детей"
+        "DoroMarine © 2025"
         "</div>", 
         unsafe_allow_html=True
     )
