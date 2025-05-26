@@ -130,18 +130,71 @@ SYSTEM_PROMPT = '''Ты гениальный AI продажник
 Начинай с приветствия и первого вопроса из плана консультации
 Заканчивай разговор после получения контактов и со словом 'Спасибо'.'''
 
+import hmac
+
 @st.cache_resource
 def init_openai_client():
     """Инициализация OpenAI клиента с использованием Streamlit secrets"""
     try:
         # Получаем API ключ из secrets
-        api_key = st.secrets["OPENAI_API_KEY"]
+        api_key = st.secrets.openai.api_key
         client = OpenAI(api_key=api_key)
         return client
     except Exception as e:
         st.error(f"Ошибка инициализации OpenAI: {e}")
-        st.error("Убедитесь, что OPENAI_API_KEY добавлен в Streamlit secrets")
+        st.error("Убедитесь, что openai.api_key добавлен в Streamlit secrets")
         return None
+
+def check_password():
+    """Returns True if the user entered the correct password."""
+    if "password_correct" in st.session_state:
+        return st.session_state.password_correct
+    
+    def password_entered():
+        """Checks whether a password entered by the user is correct."""
+        if hmac.compare_digest(
+            st.session_state.password,
+            st.secrets.auth.password
+        ):
+            st.session_state.password_correct = True
+            del st.session_state.password  # Не храним пароль в сессии
+        else:
+            st.session_state.password_correct = False
+    
+    # Оформление страницы входа
+    st.markdown("### 🔐 Вход в систему DoroMarine AI")
+    st.markdown("*Введите пароль для доступа к AI-консультанту*")
+    
+    # Форма входа
+    with st.form("login_form"):
+        st.text_input(
+            "Пароль для доступа к приложению:",
+            type="password",
+            key="password",
+            placeholder="Введите пароль доступа"
+        )
+        login_button = st.form_submit_button("🚪 Войти", on_click=password_entered)
+    
+    # Проверка результата
+    if "password_correct" in st.session_state:
+        if not st.session_state.password_correct:
+            st.error("😕 Неверный пароль")
+            return False
+    
+    # Информация для администратора
+    with st.expander("ℹ️ Информация для администратора"):
+        st.markdown("""
+        **Доступ к AI-консультанту защищен паролем.**
+        
+        Для получения пароля обратитесь к администратору системы.
+        
+        📧 Email: admin@doromarine.kz  
+        📞 Телефон: +7 (XXX) XXX-XX-XX
+        
+        🔒 **Безопасность:** Используется защищенная проверка пароля с HMAC
+        """)
+    
+    return False
 
 def chat_with_memory(client, history, system_prompt, user_message):
     """Функция общения с AI с сохранением памяти"""
@@ -211,6 +264,23 @@ def split_response_with_gpt(client, response):
 def main():
     st.title("🐻 DoroMarine AI Консультант")
     st.markdown("*Забота о здоровье вашего ребенка - наш приоритет*")
+    
+    # Проверка пароля - если не прошел, останавливаем выполнение
+    if not check_password():
+        st.stop()
+    
+    # Показываем информацию об успешном входе в sidebar
+    with st.sidebar:
+        st.success("✅ Успешная авторизация")
+        st.markdown(f"**Пользователь:** Администратор")
+        
+        if st.button("🚪 Выйти из системы", use_container_width=True):
+            # Очищаем данные авторизации и сессии
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.rerun()
+        
+        st.markdown("---")
     
     # Инициализация OpenAI клиента
     client = init_openai_client()
