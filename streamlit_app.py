@@ -227,7 +227,7 @@ def chat_with_memory(client, history, system_prompt, user_message):
         
         # Запрос к OpenAI
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4.1",
             messages=messages,
             temperature=0.15,
             max_tokens=1500
@@ -370,7 +370,7 @@ def main():
             for i, message in enumerate(st.session_state.messages):
                 with st.chat_message(message["role"]):
                     if message["role"] == "assistant":
-                        st.markdown(f"🤖 **Консультант DoroMarine:**")
+                        st.markdown(f"🐻 **Консультант DoroMarine:**")
                         st.markdown(message['content'])
                     else:
                         st.markdown(f"👤 **Вы:**")
